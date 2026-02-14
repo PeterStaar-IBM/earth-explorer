@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Earth Explorer</title>
+    <link rel="stylesheet" href="./node_modules/cesium/Build/Cesium/Widgets/widgets.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="globe-panel">
+        <div id="globe-container" aria-label="Interactive 3D globe"></div>
+        <div class="hud">
+          <h1>Earth Explorer</h1>
+          <p>Drag to rotate, scroll/pinch to zoom to street level.</p>
+          <pre id="debug-log" class="debug-log" aria-live="polite">[boot] waiting...</pre>
+        </div>
+        <div id="fatal-error" class="fatal-error" hidden></div>
+      </section>
+
+      <aside class="chat-panel" aria-label="Location chat interface">
+        <header class="chat-header">
+          <h2>Navigator</h2>
+          <p>Try: <code>show me Paris</code></p>
+        </header>
+
+        <section id="chat-log" class="chat-log" aria-live="polite"></section>
+
+        <form id="chat-form" class="chat-form">
+          <input
+            id="chat-input"
+            type="text"
+            name="command"
+            placeholder="Type an instruction..."
+            autocomplete="off"
+            required
+          />
+          <button type="submit">Send</button>
+        </form>
+      </aside>
+    </main>
+
+    <script defer src="./boot.js"></script>
+  </body>
+</html>

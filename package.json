@@ -1,0 +1,16 @@
+{
+  "name": "earth-explorer",
+  "version": "1.0.0",
+  "description": "Desktop 3D globe explorer with chat navigation",
+  "main": "main.js",
+  "scripts": {
+    "setup": "./scripts/setup.sh",
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.2.1"
+  },
+  "dependencies": {
+    "cesium": "^1.138.0"
+  }
+}
