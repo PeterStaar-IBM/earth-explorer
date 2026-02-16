@@ -132,11 +132,12 @@ async function boot() {
   const tableView = document.getElementById("table-view");
   const logsView = document.getElementById("logs-view");
   const filesTableBody = document.getElementById("files-table-body");
+  const hud = document.querySelector(".hud");
   const chatForm = document.getElementById("chat-form");
   const chatInput = document.getElementById("chat-input");
   const chatLog = document.getElementById("chat-log");
 
-  if (!globeContainer || !tableView || !logsView || !filesTableBody || !chatForm || !chatInput || !chatLog) {
+  if (!globeContainer || !tableView || !logsView || !filesTableBody || !hud || !chatForm || !chatInput || !chatLog) {
     throw new Error("Required DOM elements are missing.");
   }
 
@@ -144,18 +145,21 @@ async function boot() {
     tableView.hidden = true;
     logsView.hidden = true;
     globeContainer.hidden = false;
+    hud.hidden = false;
   }
 
   function showTableView() {
     logsView.hidden = true;
     tableView.hidden = false;
     globeContainer.hidden = true;
+    hud.hidden = true;
   }
 
   function showLogsView() {
     tableView.hidden = true;
     logsView.hidden = false;
     globeContainer.hidden = true;
+    hud.hidden = true;
   }
 
   debug("Initializing Cesium viewer");
@@ -212,7 +216,6 @@ async function boot() {
       color: CesiumLib.Color.fromCssColorString("#ff5f5f"),
       outlineColor: CesiumLib.Color.WHITE,
       outlineWidth: 2,
-      disableDepthTestDistance: Number.POSITIVE_INFINITY,
     },
     show: false,
   });
@@ -327,7 +330,6 @@ async function boot() {
           color: CesiumLib.Color.fromCssColorString("#ff5f5f"),
           outlineColor: CesiumLib.Color.WHITE,
           outlineWidth: 1,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
         label: {
           text: entry.query,
@@ -337,7 +339,6 @@ async function boot() {
           outlineWidth: 2,
           style: CesiumLib.LabelStyle.FILL_AND_OUTLINE,
           pixelOffset: new CesiumLib.Cartesian2(0, -16),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
       });
     });
