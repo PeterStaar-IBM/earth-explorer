@@ -11,10 +11,33 @@
     <main class="app-shell">
       <section class="globe-panel">
         <div id="globe-container" aria-label="Interactive 3D globe"></div>
+
+        <section id="table-view" class="table-view" hidden>
+          <div class="table-head">
+            <h3>Location CSV Files</h3>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Size (bytes)</th>
+                  <th>Modified (UTC)</th>
+                </tr>
+              </thead>
+              <tbody id="files-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="logs-view" class="logs-view" hidden>
+          <h3>Application Logs</h3>
+          <pre id="debug-log" class="debug-log" aria-live="polite">[boot] waiting...</pre>
+        </section>
+
         <div class="hud">
           <h1>Earth Explorer</h1>
           <p>Drag to rotate, scroll/pinch to zoom to street level.</p>
-          <pre id="debug-log" class="debug-log" aria-live="polite">[boot] waiting...</pre>
         </div>
         <div id="fatal-error" class="fatal-error" hidden></div>
       </section>
@@ -22,7 +45,10 @@
       <aside class="chat-panel" aria-label="Location chat interface">
         <header class="chat-header">
           <h2>Navigator</h2>
-          <p>Try: <code>show me Paris</code></p>
+          <p>
+            Try: <code>show me Paris</code>, <code>list location files</code>, <code>view sample.csv</code>,
+            <code>show logs</code>
+          </p>
         </header>
 
         <section id="chat-log" class="chat-log" aria-live="polite"></section>

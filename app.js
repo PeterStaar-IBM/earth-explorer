@@ -51,6 +51,32 @@ function parseLocationCommand(raw) {
   return input;
 }
 
+function parseIntent(raw) {
+  const input = raw.trim();
+  if (!input) {
+    return { type: "none" };
+  }
+
+  if (/^(show|open)\s+logs?$/i.test(input)) {
+    return { type: "show_logs" };
+  }
+
+  if (/^(show|open)\s+(earth|globe|map)$/i.test(input) || /^(hide|close)\s+logs?$/i.test(input)) {
+    return { type: "show_earth" };
+  }
+
+  const viewMatch = input.match(/^view\s+(.+)$/i);
+  if (viewMatch) {
+    return { type: "view_file", filename: viewMatch[1].trim() };
+  }
+
+  if (/(location files|files on record|list files|show files|which files)/i.test(input)) {
+    return { type: "list_files" };
+  }
+
+  return { type: "geocode", location: parseLocationCommand(input) };
+}
+
 async function geocode(query) {
   const url = "http://127.0.0.1:8000/api/query";
 
@@ -72,6 +98,29 @@ async function geocode(query) {
   return payload.result || null;
 }
 
+async function listLocationFiles() {
+  const response = await fetch("http://127.0.0.1:8000/api/location-files", {
+    headers: { Accept: "application/json" },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.detail || `Failed to list files (${response.status})`);
+  }
+  return payload.files || [];
+}
+
+async function resolvedFileLocations(filename) {
+  const encoded = encodeURIComponent(filename);
+  const response = await fetch(`http://127.0.0.1:8000/api/location-files/${encoded}/resolved-locations`, {
+    headers: { Accept: "application/json" },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.detail || `Failed to view file (${response.status})`);
+  }
+  return payload;
+}
+
 async function boot() {
   if (!CesiumLib) {
     throw new Error("Cesium failed to load from local node_modules.");
@@ -80,12 +129,33 @@ async function boot() {
   debug("Geocoding route: POST http://127.0.0.1:8000/api/query");
 
   const globeContainer = document.getElementById("globe-container");
+  const tableView = document.getElementById("table-view");
+  const logsView = document.getElementById("logs-view");
+  const filesTableBody = document.getElementById("files-table-body");
   const chatForm = document.getElementById("chat-form");
   const chatInput = document.getElementById("chat-input");
   const chatLog = document.getElementById("chat-log");
 
-  if (!globeContainer || !chatForm || !chatInput || !chatLog) {
+  if (!globeContainer || !tableView || !logsView || !filesTableBody || !chatForm || !chatInput || !chatLog) {
     throw new Error("Required DOM elements are missing.");
+  }
+
+  function showGlobeView() {
+    tableView.hidden = true;
+    logsView.hidden = true;
+    globeContainer.hidden = false;
+  }
+
+  function showTableView() {
+    logsView.hidden = true;
+    tableView.hidden = false;
+    globeContainer.hidden = true;
+  }
+
+  function showLogsView() {
+    tableView.hidden = true;
+    logsView.hidden = false;
+    globeContainer.hidden = true;
   }
 
   debug("Initializing Cesium viewer");
@@ -107,7 +177,6 @@ async function boot() {
   const viewer = new CesiumLib.Viewer("globe-container", viewerOptions);
   viewer.scene.globe.baseColor = CesiumLib.Color.BLACK;
 
-  // Always attach imagery explicitly for cross-version reliability.
   let osmProvider;
   if (typeof CesiumLib.OpenStreetMapImageryProvider.fromUrl === "function") {
     debug("Using OSM provider via fromUrl()");
@@ -147,13 +216,20 @@ async function boot() {
     },
     show: false,
   });
+
   let activeShapeDataSource = null;
+  const fileLocationsDataSource = new CesiumLib.CustomDataSource("file-locations");
+  viewer.dataSources.add(fileLocationsDataSource);
 
   function clearActiveShape() {
     if (activeShapeDataSource) {
       viewer.dataSources.remove(activeShapeDataSource, true);
       activeShapeDataSource = null;
     }
+  }
+
+  function clearFileLocations() {
+    fileLocationsDataSource.entities.removeAll();
   }
 
   async function showShape(feature) {
@@ -172,8 +248,8 @@ async function boot() {
     };
 
     const ds = await CesiumLib.GeoJsonDataSource.load(geojsonFeature, {
-      stroke: CesiumLib.Color.fromCssColorString("#4fc3ff"),
-      fill: CesiumLib.Color.fromCssColorString("#4fc3ff").withAlpha(0.24),
+      stroke: CesiumLib.Color.fromCssColorString("#ff7f7f"),
+      fill: CesiumLib.Color.fromCssColorString("#ff4f4f").withAlpha(0.24),
       strokeWidth: 3,
       clampToGround: true,
     });
@@ -181,16 +257,15 @@ async function boot() {
     activeShapeDataSource = ds;
     viewer.dataSources.add(ds);
 
-    // Normalize styling across polygon and line features.
     ds.entities.values.forEach((entity) => {
       if (entity.polygon) {
         entity.polygon.outline = true;
-        entity.polygon.outlineColor = CesiumLib.Color.fromCssColorString("#7fd6ff");
-        entity.polygon.material = CesiumLib.Color.fromCssColorString("#4fc3ff").withAlpha(0.24);
+        entity.polygon.outlineColor = CesiumLib.Color.fromCssColorString("#ff9c9c");
+        entity.polygon.material = CesiumLib.Color.fromCssColorString("#ff4f4f").withAlpha(0.24);
       }
       if (entity.polyline) {
         entity.polyline.width = 4;
-        entity.polyline.material = CesiumLib.Color.fromCssColorString("#7fd6ff");
+        entity.polyline.material = CesiumLib.Color.fromCssColorString("#ff9c9c");
       }
     });
 
@@ -209,15 +284,87 @@ async function boot() {
     chatLog.scrollTop = chatLog.scrollHeight;
   }
 
-  addMessage("Ready. Ask for a place with 'show me <location>'.");
+  function renderFilesTable(files) {
+    filesTableBody.innerHTML = "";
+
+    if (!files.length) {
+      const row = document.createElement("tr");
+      row.innerHTML = '<td colspan="3">No CSV files found in backend/output.</td>';
+      filesTableBody.appendChild(row);
+      return;
+    }
+
+    files.forEach((file) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `<td>${file.name}</td><td>${file.size_bytes}</td><td>${file.modified_utc}</td>`;
+      filesTableBody.appendChild(row);
+    });
+  }
+
+  async function plotResolvedLocations(payload) {
+    clearActiveShape();
+    clearFileLocations();
+    marker.show = false;
+
+    const points = [];
+    const locations = payload.locations || [];
+
+    locations.forEach((entry) => {
+      const result = entry.result || {};
+      const lat = Number(result.lat);
+      const lon = Number(result.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return;
+      }
+
+      const position = CesiumLib.Cartesian3.fromDegrees(lon, lat, 0);
+      points.push(position);
+
+      fileLocationsDataSource.entities.add({
+        position,
+        point: {
+          pixelSize: 7,
+          color: CesiumLib.Color.fromCssColorString("#ff5f5f"),
+          outlineColor: CesiumLib.Color.WHITE,
+          outlineWidth: 1,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: entry.query,
+          font: "12px sans-serif",
+          fillColor: CesiumLib.Color.WHITE,
+          outlineColor: CesiumLib.Color.BLACK,
+          outlineWidth: 2,
+          style: CesiumLib.LabelStyle.FILL_AND_OUTLINE,
+          pixelOffset: new CesiumLib.Cartesian2(0, -16),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+    });
+
+    if (!points.length) {
+      addMessage(`No resolvable locations in ${payload.file}.`, "bot");
+      return;
+    }
+
+    await viewer.flyTo(fileLocationsDataSource, {
+      duration: 2.0,
+      offset: new CesiumLib.HeadingPitchRange(0, CesiumLib.Math.toRadians(-60), 0),
+    });
+  }
+
+showGlobeView();
+
+  addMessage("Ready. Ask for a place with 'show me <location>'.", "bot");
+  addMessage("You can also ask: 'list location files', 'view <filename>', 'show logs', 'show earth'.", "bot");
   debug("Scene initialized; drag to rotate and scroll to zoom to streets.");
 
   chatForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const raw = chatInput.value;
-    const location = parseLocationCommand(raw);
+    const intent = parseIntent(raw);
 
-    if (!location) {
+    if (intent.type === "none") {
       return;
     }
 
@@ -225,12 +372,53 @@ async function boot() {
     chatInput.value = "";
 
     try {
-      addMessage(`Looking for ${location}...`);
+      if (intent.type === "show_logs") {
+        showLogsView();
+        addMessage("Showing logs view.", "bot");
+        return;
+      }
+
+      if (intent.type === "show_earth") {
+        showGlobeView();
+        addMessage("Showing Earth view.", "bot");
+        return;
+      }
+
+      if (intent.type === "list_files") {
+        debug("Listing location files");
+        const files = await listLocationFiles();
+        renderFilesTable(files);
+        showTableView();
+        addMessage(`Found ${files.length} CSV file(s) in backend/output.`, "bot");
+        return;
+      }
+
+      if (intent.type === "view_file") {
+        showGlobeView();
+        debug(`Viewing file: ${intent.filename}`);
+        addMessage(`Loading locations from ${intent.filename}...`, "bot");
+        const payload = await resolvedFileLocations(intent.filename);
+        await plotResolvedLocations(payload);
+        addMessage(
+          `Showing ${payload.resolved}/${payload.requested} resolved locations from ${payload.file}.`,
+          "bot"
+        );
+        return;
+      }
+
+      const location = intent.location;
+      if (!location) {
+        return;
+      }
+
+      showGlobeView();
+      clearFileLocations();
+      addMessage(`Looking for ${location}...`, "bot");
       debug(`Geocoding: ${location}`);
       const result = await geocode(location);
 
       if (!result) {
-        addMessage(`I could not find '${location}'. Try a more specific name.`);
+        addMessage(`I could not find '${location}'. Try a more specific name.`, "bot");
         return;
       }
 
@@ -253,13 +441,13 @@ async function boot() {
         });
       }
 
-      addMessage(`Showing ${result.display_name}`);
+      addMessage(`Showing ${result.display_name}`, "bot");
       debug(
         `Fly-to target lat=${lat.toFixed(4)} lon=${lon.toFixed(4)} mode=${drewShape ? "shape" : "point"}`
       );
     } catch (error) {
-      addMessage("Lookup failed. Check your network connection and try again.");
-      debug(`Geocode failed: ${error.message}`, "error");
+      addMessage("Lookup failed. Check your network connection and try again.", "bot");
+      debug(`Action failed: ${error.message}`, "error");
     }
   });
 
