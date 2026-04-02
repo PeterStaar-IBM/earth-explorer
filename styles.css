@@ -149,6 +149,23 @@ body {
   z-index: 20;
 }
 
+.map-attribution {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 10;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  background: rgba(5, 11, 24, 0.78);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.map-attribution a {
+  color: inherit;
+}
+
 .chat-panel {
   border-left: 1px solid var(--border);
   background: var(--panel);

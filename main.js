@@ -1,6 +1,7 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, session } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");
+const packageJson = require("./package.json");
 
 let backendProc = null;
 
@@ -56,6 +57,9 @@ function stopBackend() {
 }
 
 function createWindow() {
+  const userAgent = `${packageJson.name}/${packageJson.version} (Electron desktop app)`;
+  session.defaultSession.setUserAgent(userAgent);
+
   const win = new BrowserWindow({
     width: 1500,
     height: 920,
