@@ -28,23 +28,22 @@ Electron starts the FastAPI backend automatically with `uv run` (`http://127.0.0
 
 ## Chat Commands
 
-- `show me <place>`
-- `go to <place>`
-- `fly to <place>`
-- `list location files`
-- `view <filename>`
-- `show logs`
-- `show earth`
+- `/show <place>`
+- `/list`
+- `/view <filename.csv>`
+- `/logs`
+- `/earth`
+- `/help`
 
-`list location files` switches the viewer into a tabular file view showing CSV files in `backend/output`.
+`/list` switches the viewer into a tabular file view showing CSV files in `backend/output`.
 
-`view <filename>` resolves and plots all location rows from that CSV on the globe.
+`/view <filename.csv>` resolves and plots all location rows from that CSV on the globe.
 
-`show logs` opens the dedicated logs view.
+`/logs` opens the dedicated logs view.
 
-`show earth` returns to the globe view.
+`/earth` returns to the globe view.
 
-All navigation between views is chat-driven.
+All navigation between views is chat-driven. Use `Tab` in chat to autocomplete slash commands and `/view` filenames.
 
 ## Backend API
 
@@ -104,6 +103,25 @@ uv run --project backend python backend/scripts/extract_locations_gpt_oss_lmstud
   --output-csv backend/output/<input-stem>.gptoss.locations.csv \
   --model openai/gpt-oss-20b \
   --base-url http://127.0.0.1:1234/v1
+```
+
+## ArcGIS Hub ZIP Index + Search
+
+Index all ZIP files in `data/ArcGIS_Hub`:
+
+```bash
+uv run --project backend python backend/scripts/arcgis_hub_index_search.py load \
+  --data-dir data/ArcGIS_Hub \
+  --db backend/output/arcgis_hub_index.sqlite
+```
+
+Search indexed content:
+
+```bash
+uv run --project backend python backend/scripts/arcgis_hub_index_search.py search \
+  --db backend/output/arcgis_hub_index.sqlite \
+  --query \"Basins\" \
+  --limit 10
 ```
 
 ## Notes

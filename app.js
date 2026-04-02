@@ -51,30 +51,75 @@ function parseLocationCommand(raw) {
   return input;
 }
 
+const SLASH_COMMANDS = ["/show", "/list", "/view", "/logs", "/earth", "/help"];
+
+let autocompleteState = {
+  mode: "",
+  prefix: "",
+  matches: [],
+  index: -1,
+};
+
+function resetAutocompleteState() {
+  autocompleteState = {
+    mode: "",
+    prefix: "",
+    matches: [],
+    index: -1,
+  };
+}
+
 function parseIntent(raw) {
   const input = raw.trim();
   if (!input) {
     return { type: "none" };
   }
 
-  if (/^(show|open)\s+logs?$/i.test(input)) {
+  if (!input.startsWith("/")) {
+    return { type: "geocode", location: parseLocationCommand(input) };
+  }
+
+  const parts = input.split(/\s+/);
+  const cmd = (parts[0] || "").toLowerCase();
+  const args = input.slice(parts[0].length).trim();
+
+  if (cmd === "/help") {
+    return { type: "help" };
+  }
+
+  if (cmd === "/logs") {
     return { type: "show_logs" };
   }
 
-  if (/^(show|open)\s+(earth|globe|map)$/i.test(input) || /^(hide|close)\s+logs?$/i.test(input)) {
+  if (cmd === "/earth") {
     return { type: "show_earth" };
   }
 
-  const viewMatch = input.match(/^view\s+(.+)$/i);
-  if (viewMatch) {
-    return { type: "view_file", filename: viewMatch[1].trim() };
-  }
-
-  if (/(location files|files on record|list files|show files|which files)/i.test(input)) {
+  if (cmd === "/list") {
     return { type: "list_files" };
   }
 
-  return { type: "geocode", location: parseLocationCommand(input) };
+  if (cmd === "/view") {
+    if (!args) {
+      return { type: "error", message: "Usage: /view <filename.csv>" };
+    }
+    return { type: "view_file", filename: args };
+  }
+
+  if (cmd === "/show") {
+    if (!args) {
+      return { type: "error", message: "Usage: /show <place|logs|earth>" };
+    }
+    if (/^logs?$/i.test(args)) {
+      return { type: "show_logs" };
+    }
+    if (/^(earth|globe|map)$/i.test(args)) {
+      return { type: "show_earth" };
+    }
+    return { type: "geocode", location: args };
+  }
+
+  return { type: "error", message: `Unknown command: ${cmd}. Try /help.` };
 }
 
 async function geocode(query) {
@@ -223,6 +268,7 @@ async function boot() {
   let activeShapeDataSource = null;
   const fileLocationsDataSource = new CesiumLib.CustomDataSource("file-locations");
   viewer.dataSources.add(fileLocationsDataSource);
+  let cachedFileNames = [];
 
   function clearActiveShape() {
     if (activeShapeDataSource) {
@@ -356,9 +402,89 @@ async function boot() {
 
 showGlobeView();
 
-  addMessage("Ready. Ask for a place with 'show me <location>'.", "bot");
-  addMessage("You can also ask: 'list location files', 'view <filename>', 'show logs', 'show earth'.", "bot");
+  addMessage("Ready. Use /show <location> to navigate.", "bot");
+  addMessage("Commands: /show <place>, /list, /view <filename.csv>, /logs, /earth, /help", "bot");
   debug("Scene initialized; drag to rotate and scroll to zoom to streets.");
+
+  chatInput.addEventListener("input", () => {
+    resetAutocompleteState();
+  });
+
+  chatInput.addEventListener("keydown", async (event) => {
+    if (event.key !== "Tab") {
+      return;
+    }
+
+    const value = chatInput.value;
+    if (!value.startsWith("/")) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const spaceIndex = value.indexOf(" ");
+    const isCommandToken = spaceIndex === -1;
+
+    if (isCommandToken) {
+      const prefix = value.toLowerCase();
+      const matches = SLASH_COMMANDS.filter((cmd) => cmd.startsWith(prefix));
+      if (!matches.length) {
+        return;
+      }
+
+      if (autocompleteState.mode === "command" && autocompleteState.prefix === prefix) {
+        autocompleteState.index = (autocompleteState.index + 1) % matches.length;
+      } else {
+        autocompleteState = {
+          mode: "command",
+          prefix,
+          matches,
+          index: 0,
+        };
+      }
+
+      chatInput.value = `${matches[autocompleteState.index]} `;
+      return;
+    }
+
+    const cmd = value.slice(0, spaceIndex).toLowerCase();
+    if (cmd !== "/view") {
+      return;
+    }
+
+    const tail = value.slice(spaceIndex + 1);
+    if (tail.includes(" ")) {
+      return;
+    }
+
+    if (!cachedFileNames.length) {
+      try {
+        const files = await listLocationFiles();
+        cachedFileNames = files.map((f) => f.name);
+      } catch {
+        return;
+      }
+    }
+
+    const prefix = tail.toLowerCase();
+    const matches = cachedFileNames.filter((name) => name.toLowerCase().startsWith(prefix));
+    if (!matches.length) {
+      return;
+    }
+
+    if (autocompleteState.mode === "view_file" && autocompleteState.prefix === prefix) {
+      autocompleteState.index = (autocompleteState.index + 1) % matches.length;
+    } else {
+      autocompleteState = {
+        mode: "view_file",
+        prefix,
+        matches,
+        index: 0,
+      };
+    }
+
+    chatInput.value = `/view ${matches[autocompleteState.index]}`;
+  });
 
   chatForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -373,6 +499,19 @@ showGlobeView();
     chatInput.value = "";
 
     try {
+      if (intent.type === "help") {
+        addMessage(
+          "Commands: /show <place>, /list, /view <file.csv>, /logs, /earth, /help",
+          "bot"
+        );
+        return;
+      }
+
+      if (intent.type === "error") {
+        addMessage(intent.message, "bot");
+        return;
+      }
+
       if (intent.type === "show_logs") {
         showLogsView();
         addMessage("Showing logs view.", "bot");
@@ -388,6 +527,7 @@ showGlobeView();
       if (intent.type === "list_files") {
         debug("Listing location files");
         const files = await listLocationFiles();
+        cachedFileNames = files.map((f) => f.name);
         renderFilesTable(files);
         showTableView();
         addMessage(`Found ${files.length} CSV file(s) in backend/output.`, "bot");
